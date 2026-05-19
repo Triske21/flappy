@@ -33,6 +33,7 @@
 </head>
 <body>
 <canvas id="game" width="400" height="600"></canvas>
+<div id="ytplayer" style="position:absolute;left:-9999px;width:1px;height:1px;"></div>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -42,9 +43,63 @@ const H = canvas.height;
 
 // =================== GLOBAL LEADERBOARD ===================
 // Podesi ove dve vrednosti sa jsonbin.io (uputstvo posle koda)
-const JSONBIN_BIN_ID = '6a0c4e526877513b2798b597';   // <-- nalepi BIN ID ovde
-const JSONBIN_KEY = '$2a$10$vu/9wQddqJsEGHhfAEYFOOczsunCGZPDGFvU7IcxaOWv8D770Opm2';      // <-- nalepi MASTER KEY ovde
+const JSONBIN_BIN_ID = '';   // <-- nalepi BIN ID ovde
+const JSONBIN_KEY = '';      // <-- nalepi MASTER KEY ovde
 const ONLINE_ENABLED = JSONBIN_BIN_ID !== '' && JSONBIN_KEY !== '';
+
+// =================== BOSS 4 MUZIKA (YouTube) ===================
+// Nadji video na YouTube-u (npr. "Vasko Zabata") i kopiraj ID iz URL-a
+// URL primer: https://www.youtube.com/watch?v=XXXXXXXXXXX  ←  to "XXXXXXXXXXX" je ID
+const BOSS4_YOUTUBE_ID = 'JZC4RHVdiWA';  // <-- zameni ovde sa stvarnim ID-em
+
+let ytPlayer = null;
+let ytReady = false;
+
+window.onYouTubeIframeAPIReady = function() {
+  ytPlayer = new YT.Player('ytplayer', {
+    height: '1',
+    width: '1',
+    videoId: BOSS4_YOUTUBE_ID,
+    playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, modestbranding: 1, playsinline: 1 },
+    events: {
+      onReady: () => { ytReady = true; }
+    }
+  });
+};
+
+// Učitaj YouTube IFrame API dinamički POSLE definisanja funkcije
+(function loadYTAPI() {
+  const tag = document.createElement('script');
+  tag.src = 'https://www.youtube.com/iframe_api';
+  document.head.appendChild(tag);
+})();
+
+function playBossMusic() {
+  if (!ytReady || !ytPlayer) return;
+  try {
+    ytPlayer.seekTo(0);
+    ytPlayer.unMute();
+    ytPlayer.setVolume(70);
+    ytPlayer.playVideo();
+  } catch (e) {}
+}
+
+function stopBossMusic() {
+  if (!ytReady || !ytPlayer) return;
+  try { ytPlayer.pauseVideo(); } catch (e) {}
+}
+
+// =================== TEST/DEBUG MODE (URL parametri) ===================
+// Primeri:
+//   ?start=55     -> kreneš sa skorom 55 (treba još 5 cevi do bossa 4)
+//   ?boss=4       -> odmah ulaziš u borbu sa boss 4
+//   ?start=45     -> testiraj boss 3 itd.
+const urlParams = new URLSearchParams(window.location.search);
+let urlStartScore = parseInt(urlParams.get('start'));
+if (isNaN(urlStartScore) || urlStartScore < 0) urlStartScore = 0;
+let urlStartBoss = parseInt(urlParams.get('boss'));
+if (isNaN(urlStartBoss) || urlStartBoss < 1 || urlStartBoss > 4) urlStartBoss = 0;
+const TEST_MODE = urlStartScore > 0 || urlStartBoss > 0;
 
 let globalScores = [];
 let globalStatus = ONLINE_ENABLED ? 'idle' : 'disabled';
@@ -323,7 +378,7 @@ function updatePipes() {
     if (!p.passed && p.x + 30 < pigeon.x) {
       p.passed = true;
       score++;
-      if (score > 0 && score % BOSS_TRIGGER === 0 && bossesDefeated < 3) {
+      if (score > 0 && score % BOSS_TRIGGER === 0 && bossesDefeated < MAX_BOSSES) {
         triggerBoss();
       }
     }
@@ -389,8 +444,17 @@ const BOSS_CONFIGS = {
     shotPattern: 'rapid', // fast aimed
     color: '#aa7700',
     bgTheme: 'epic'
+  },
+  4: {
+    name: 'AIR BULGARIA',
+    hp: 15,
+    shotInterval: 48,
+    shotPattern: 'rapid', // brzo kao zlatni kralj
+    color: '#00966e',
+    bgTheme: 'sky'
   }
 };
+const MAX_BOSSES = 4;
 
 const boss = {
   x: 0, y: 0,
@@ -419,6 +483,7 @@ const boss = {
     this.hitFlash = 0;
     this.bobPhase = 0;
     this.state = 'enter';
+    if (level === 4) playBossMusic();
   },
 
   hit() {
@@ -445,6 +510,10 @@ const boss = {
       // Boss 2 sways horizontally too
       if (this.level === 2) this.x = W - 100 + Math.cos(this.bobPhase * 0.7) * 25;
       if (this.level === 3) this.x = W - 110 + Math.cos(this.bobPhase * 1.2) * 35;
+      if (this.level === 4) {
+        this.x = W - 110 + Math.cos(this.bobPhase * 0.9) * 30;
+        this.y = 160 + Math.sin(this.bobPhase * 1.1) * 40;
+      }
 
       this.shotTimer--;
       if (this.shotTimer <= 0) {
@@ -457,8 +526,9 @@ const boss = {
       this.x += 1;
       if (this.exitTimer <= 0) {
         this.active = false;
+        if (this.level === 4) stopBossMusic();
         bossesDefeated++;
-        if (bossesDefeated >= 3) {
+        if (bossesDefeated >= MAX_BOSSES) {
           state = 'victory';
           submitScore();
         } else {
@@ -514,6 +584,7 @@ const boss = {
     if (this.level === 1) drawBoss1.call(this);
     else if (this.level === 2) drawBoss2.call(this);
     else if (this.level === 3) drawBoss3.call(this);
+    else if (this.level === 4) drawBoss4.call(this);
 
     ctx.filter = 'none';
     ctx.restore();
@@ -531,7 +602,8 @@ const boss = {
       const hpG = ctx.createLinearGradient(barX, 0, barX + barW, 0);
       if (this.level === 1) { hpG.addColorStop(0, '#e94560'); hpG.addColorStop(1, '#ff7080'); }
       else if (this.level === 2) { hpG.addColorStop(0, '#9933ff'); hpG.addColorStop(1, '#cc66ff'); }
-      else { hpG.addColorStop(0, '#ffaa00'); hpG.addColorStop(1, '#ffee44'); }
+      else if (this.level === 3) { hpG.addColorStop(0, '#ffaa00'); hpG.addColorStop(1, '#ffee44'); }
+      else { hpG.addColorStop(0, '#00966e'); hpG.addColorStop(0.5, '#ffffff'); hpG.addColorStop(1, '#d62612'); }
       ctx.fillStyle = hpG;
       ctx.fillRect(barX, barY, barW * ratio, 8);
 
@@ -894,6 +966,172 @@ function drawBoss3() {
   ctx.closePath(); ctx.fill();
 }
 
+// Boss 4 - Air Bulgaria (Airbus avion)
+function drawBoss4() {
+  // Shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(0, 50, 80, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Slight banking tilt
+  const tilt = Math.sin(this.bobPhase * 0.7) * 0.06;
+  ctx.rotate(tilt);
+
+  // Back wing (smaller, horizontal stabilizer)
+  ctx.fillStyle = '#c8c8d0';
+  ctx.beginPath();
+  ctx.moveTo(52, -2);
+  ctx.lineTo(72, -14);
+  ctx.lineTo(78, -12);
+  ctx.lineTo(62, 2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(52, 2);
+  ctx.lineTo(72, 14);
+  ctx.lineTo(78, 12);
+  ctx.lineTo(62, -2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Main wings (large, behind fuselage)
+  ctx.fillStyle = '#d8d8e0';
+  // Bottom wing
+  ctx.beginPath();
+  ctx.moveTo(-10, 6);
+  ctx.lineTo(35, 32);
+  ctx.lineTo(45, 32);
+  ctx.lineTo(20, 10);
+  ctx.closePath();
+  ctx.fill();
+  // Top wing
+  ctx.beginPath();
+  ctx.moveTo(-10, -6);
+  ctx.lineTo(35, -32);
+  ctx.lineTo(45, -32);
+  ctx.lineTo(20, -10);
+  ctx.closePath();
+  ctx.fill();
+
+  // Fuselage (main body)
+  const fg = ctx.createLinearGradient(0, -16, 0, 16);
+  fg.addColorStop(0, '#ffffff');
+  fg.addColorStop(0.5, '#eaeaf2');
+  fg.addColorStop(1, '#b8b8c2');
+  ctx.fillStyle = fg;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 78, 15, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Nose cone
+  ctx.fillStyle = '#666';
+  ctx.beginPath();
+  ctx.ellipse(-72, 0, 12, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Cockpit windows
+  ctx.fillStyle = '#1a2a4a';
+  ctx.beginPath();
+  ctx.ellipse(-58, -4, 9, 5, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#88ccff';
+  ctx.beginPath();
+  ctx.ellipse(-60, -5, 6, 3, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Passenger windows row
+  ctx.fillStyle = '#2a4a7a';
+  for (let i = 0; i < 10; i++) {
+    ctx.beginPath();
+    ctx.arc(-40 + i * 8, -3, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Bulgarian flag stripes along fuselage (signature)
+  ctx.fillStyle = '#00966e';
+  ctx.fillRect(-65, 4, 130, 3);
+  ctx.fillStyle = '#d62612';
+  ctx.fillRect(-65, 7, 130, 3);
+
+  // "AIR BULGARIA" text
+  ctx.fillStyle = '#003a7a';
+  ctx.font = 'bold 9px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('AIR BULGARIA', 0, -7);
+
+  // Vertical tail fin
+  ctx.fillStyle = '#eaeaf2';
+  ctx.beginPath();
+  ctx.moveTo(48, -2);
+  ctx.lineTo(58, -32);
+  ctx.lineTo(72, -32);
+  ctx.lineTo(74, -2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  // Bulgarian flag on tail fin
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(60, -28, 12, 8);
+  ctx.fillStyle = '#00966e';
+  ctx.fillRect(60, -20, 12, 8);
+  ctx.fillStyle = '#d62612';
+  ctx.fillRect(60, -12, 12, 8);
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(60, -28, 12, 24);
+
+  // Engines under wings
+  const spin = this.bobPhase * 6;
+  // Bottom engine
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.ellipse(15, 22, 10, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#555';
+  ctx.beginPath();
+  ctx.arc(7, 22, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#aaa';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 4; i++) {
+    const a = spin + i * Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(7, 22);
+    ctx.lineTo(7 + Math.cos(a) * 4, 22 + Math.sin(a) * 4);
+    ctx.stroke();
+  }
+  // Engine exhaust glow
+  ctx.fillStyle = 'rgba(255, 180, 80, 0.5)';
+  ctx.beginPath();
+  ctx.arc(24, 22, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Top engine (mirror)
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.ellipse(15, -22, 10, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#555';
+  ctx.beginPath();
+  ctx.arc(7, -22, 4, 0, Math.PI * 2);
+  ctx.fill();
+  for (let i = 0; i < 4; i++) {
+    const a = spin + i * Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(7, -22);
+    ctx.lineTo(7 + Math.cos(a) * 4, -22 + Math.sin(a) * 4);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255, 180, 80, 0.5)';
+  ctx.beginPath();
+  ctx.arc(24, -22, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 // =================== PROJECTILES ===================
 let fireballs = []; // boss fireballs
 let bullets = [];  // player bullets
@@ -907,6 +1145,51 @@ function updateFireballs() {
 
 function drawFireballs() {
   fireballs.forEach(f => {
+    if (f.level === 4) {
+      // Bugarska zastava projektil
+      const w = 22, h = 16;
+      const angle = Math.atan2(f.vy, f.vx);
+      const wave = Math.sin(f.life * 0.4) * 1.5;
+
+      // Trail (suptilan zlatni)
+      for (let i = 1; i < 5; i++) {
+        ctx.fillStyle = `rgba(255, 240, 200, ${0.3 - i * 0.06})`;
+        ctx.beginPath();
+        ctx.arc(f.x - f.vx * i * 1.5, f.y - f.vy * i * 1.5, 7 - i, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.rotate(angle);
+
+      // Glow iza zastave
+      ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+      ctx.shadowBlur = 10;
+
+      // Zastava 3 trake: belo / zeleno / crveno
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-w / 2, -h / 2 + wave * 0.3, w, h / 3);
+      ctx.fillStyle = '#00966e';
+      ctx.fillRect(-w / 2, -h / 2 + h / 3, w, h / 3);
+      ctx.fillStyle = '#d62612';
+      ctx.fillRect(-w / 2, -h / 2 + 2 * h / 3 - wave * 0.3, w, h / 3);
+
+      ctx.shadowBlur = 0;
+
+      // Ivica
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-w / 2, -h / 2, w, h);
+
+      // Mala "drska" zastave
+      ctx.fillStyle = '#8a6633';
+      ctx.fillRect(-w / 2 - 2, -h / 2 - 2, 2, h + 4);
+
+      ctx.restore();
+      return;
+    }
+
     // Color by boss level
     let colors;
     if (f.level === 2) colors = { trail: 'rgba(180, 60, 255, ', core1: '#f0c0ff', core2: '#aa44ff', core3: '#5500aa' };
@@ -1108,6 +1391,10 @@ function drawBackground() {
     sky.addColorStop(0, '#ff7700');
     sky.addColorStop(0.5, '#ffbb44');
     sky.addColorStop(1, '#ffee88');
+  } else if (theme === 'sky') {
+    sky.addColorStop(0, '#1a5aaa');
+    sky.addColorStop(0.5, '#5a99dd');
+    sky.addColorStop(1, '#aaddff');
   } else {
     sky.addColorStop(0, '#4a90d9');
     sky.addColorStop(0.6, '#87ceeb');
@@ -1225,6 +1512,7 @@ function drawBackground() {
     if (theme === 'sunset') cloudColor = 'rgba(120, 50, 70, 0.8)';
     else if (theme === 'storm') cloudColor = 'rgba(40, 30, 60, 0.85)';
     else if (theme === 'epic') cloudColor = 'rgba(255, 220, 160, 0.7)';
+    else if (theme === 'sky') cloudColor = 'rgba(255,255,255,0.95)';
     ctx.fillStyle = cloudColor;
     ctx.beginPath();
     ctx.arc(c.x, c.y, c.w * 0.3, 0, Math.PI * 2);
@@ -1233,8 +1521,24 @@ function drawBackground() {
     ctx.fill();
   });
 
-  // Buildings (skip for epic - replaced with mountains)
-  if (theme !== 'epic') {
+  // Contrails (kondenzacioni tragovi) za sky temu
+  if (theme === 'sky') {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 3;
+    ctx.setLineDash([12, 8]);
+    ctx.beginPath();
+    ctx.moveTo(0, 80 + Math.sin(frames * 0.005) * 5);
+    ctx.lineTo(W, 100 + Math.cos(frames * 0.005) * 5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, 220 + Math.sin(frames * 0.004 + 1) * 5);
+    ctx.lineTo(W, 200 + Math.cos(frames * 0.004 + 1) * 5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Buildings (skip for epic and sky - we're high in the air)
+  if (theme !== 'epic' && theme !== 'sky') {
     if (state === 'playing' || state === 'boss') bgX -= 0.5;
     buildings.forEach(b => {
       const bx = ((b.x - bgX) % (W + 60) + W + 60) % (W + 60) - 30;
@@ -1254,6 +1558,7 @@ function drawBackground() {
   if (theme === 'sunset') { groundG.addColorStop(0, '#4a2010'); groundG.addColorStop(1, '#2a1008'); }
   else if (theme === 'storm') { groundG.addColorStop(0, '#1a0a2a'); groundG.addColorStop(1, '#0a0418'); }
   else if (theme === 'epic') { groundG.addColorStop(0, '#aa7744'); groundG.addColorStop(1, '#7a4a22'); }
+  else if (theme === 'sky') { groundG.addColorStop(0, '#cce4f8'); groundG.addColorStop(1, '#aaccee'); }
   else { groundG.addColorStop(0, '#5a8a3a'); groundG.addColorStop(1, '#3a6a2a'); }
   ctx.fillStyle = groundG;
   ctx.fillRect(0, H - 30, W, 30);
@@ -1261,12 +1566,24 @@ function drawBackground() {
   if (theme === 'sunset') topColor = '#6a3020';
   else if (theme === 'storm') topColor = '#2a1442';
   else if (theme === 'epic') topColor = '#ccaa66';
+  else if (theme === 'sky') topColor = '#ffffff';
   ctx.fillStyle = topColor;
   ctx.fillRect(0, H - 30, W, 6);
 }
 
 // =================== HUD ===================
 function drawHUD() {
+  if (TEST_MODE) {
+    ctx.fillStyle = 'rgba(255, 200, 0, 0.85)';
+    ctx.beginPath();
+    ctx.roundRect(8, 8, 78, 22, 6);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('🧪 TEST MODE', 47, 23);
+  }
+
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.beginPath();
   ctx.roundRect(W / 2 - 60, 14, 120, 44, 12);
@@ -1330,7 +1647,7 @@ function drawMenu() {
 
   ctx.font = '14px Arial';
   ctx.fillStyle = '#ffdd44';
-  ctx.fillText('Pređi 3 bossa da bi pobedio', W / 2, 114);
+  ctx.fillText('Pređi 4 bossa do nivoa 60', W / 2, 114);
 
   // Decorative pigeon
   ctx.save();
@@ -1638,7 +1955,7 @@ function drawVictory() {
 
   ctx.fillStyle = '#5a2a00';
   ctx.font = 'bold 18px Arial';
-  ctx.fillText('Pobedio si sva 3 bossa!', W / 2, 110);
+  ctx.fillText('Pobedio si sva 4 bossa!', W / 2, 110);
 
   ctx.fillStyle = '#3a1a00';
   ctx.font = 'bold 16px Arial';
@@ -1712,6 +2029,7 @@ function submitScore() {
 
 // =================== START / RESTART ===================
 function startGame() {
+  stopBossMusic();
   state = 'playing';
   score = 0;
   frames = 0;
@@ -1725,6 +2043,20 @@ function startGame() {
   currentBossLevel = 0;
   pigeon.reset();
   pigeon.flap();
+
+  // Test mode: ?boss=N -> odmah skoči u borbu sa bossom N
+  if (urlStartBoss >= 1 && urlStartBoss <= MAX_BOSSES) {
+    bossesDefeated = urlStartBoss - 1;
+    score = urlStartBoss * BOSS_TRIGGER;
+    triggerBoss();
+    return;
+  }
+
+  // Test mode: ?start=N -> krećeš sa skorom N
+  if (urlStartScore > 0) {
+    score = urlStartScore;
+    bossesDefeated = Math.min(MAX_BOSSES, Math.floor(score / BOSS_TRIGGER));
+  }
 }
 
 // =================== LOOP ===================
@@ -1775,6 +2107,7 @@ function gameLoop() {
     frames++;
     if (checkCollision()) {
       state = 'dead';
+      stopBossMusic();
       submitScore();
       if (score > hiScore) hiScore = score;
     }
@@ -1870,3 +2203,4 @@ gameLoop();
 </script>
 </body>
 </html>
+
